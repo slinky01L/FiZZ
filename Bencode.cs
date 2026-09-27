@@ -1,29 +1,25 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-using System.Windows;
+﻿using System.Text;
 
 namespace FiZZ
 {
-    internal class BencodeParser
+    internal class BencodeParser(byte[] data)
     {
-        private static readonly char DictionaryStart = 'd';
-        private static readonly char ListStart = 'l';
-        private static readonly char NumberStart = 'i';
-        private static readonly char ByteStringSeparator = ':';
-        private static readonly char ItemEnd = 'e';
+        private const char DictionaryStart = 'd';
+        private const char ListStart = 'l';
+        private const char NumberStart = 'i';
+        private const char ByteStringSeparator = ':';
+        private const char ItemEnd = 'e';
 
-        private int i = -1;
-        private char curr;
-        private char[] _data;
+        private const byte DictionaryStartByte = (byte)DictionaryStart;
+        private const byte ListStartByte = (byte)ListStart;
+        private const byte NumberStartByte = (byte)NumberStart;
+        private const byte ByteStringSeparatorByte = (byte)ByteStringSeparator;
+        private const byte ItemEndByte = (byte)ItemEnd;
 
-        public Stack<string> ErrorMessages { get; private set; }
+        private int _i = -1;
+        private byte _curr;
 
-        public BencodeParser(char[] data)
-        {
-            _data = data;
-            ErrorMessages = [];
-        }
+        public Stack<string> ErrorMessages { get; } = [];
 
         public Dictionary<string, object>? Read()
         {
@@ -33,40 +29,32 @@ namespace FiZZ
 
         private object? ReadNextElement()
         {
-            switch (curr)
+            return _curr switch
             {
-                case var d when d == DictionaryStart:
-                    return ReadDictionary();
-                case var l when l == ListStart:
-                    return ReadList();
-                case var i when i == NumberStart:
-                    return ReadNumber();
-                default:
-                    if (char.IsNumber(curr))
-                    {
-                        return ReadString();
-                    }
-                    return null;
-            }
+                DictionaryStartByte => ReadDictionary(),
+                ListStartByte => ReadList(),
+                NumberStartByte => ReadNumber(),
+                _ => char.IsNumber((char)_curr) ? ReadString() : null
+            };
         }
 
         private Dictionary<string, object>? ReadDictionary()
         {
-            if (curr != DictionaryStart) return null;
+            if (_curr != DictionaryStartByte) return null;
             Eat();
 
             Dictionary<string, object> dic = [];
             
-            while (curr != ItemEnd)
+            while (_curr != ItemEndByte)
             {
-                string? key = ReadString();
+                var key = ReadString();
                 if (key is null)
                 {
                     ErrorMessages.Push($"Error reading key");
                     return null;
                 }
 
-                object? value = ReadNextElement();
+                var value = ReadNextElement();
                 if (value is null)
                 {
                     ErrorMessages.Push($"Error reading value");
@@ -81,14 +69,14 @@ namespace FiZZ
 
         private List<object>? ReadList()
         {
-            if (curr != ListStart) return null;
+            if (_curr != ListStartByte) return null;
             Eat();
 
             List<object> list = [];
 
-            while (curr != ItemEnd)
+            while (_curr != ItemEndByte)
             {
-                object? value = ReadNextElement();
+                var value = ReadNextElement();
                 if (value is null)
                 {
                     ErrorMessages.Push($"Error reading list");
@@ -102,32 +90,29 @@ namespace FiZZ
 
         private int? ReadNumber()
         {
-            if (curr != NumberStart) return null;
+            if (_curr != NumberStartByte) return null;
             Eat();
 
             StringBuilder sb = new();
-            while (char.IsNumber(curr))
+            while (char.IsDigit((char)_curr))
             {
-                sb.Append(curr);
+                sb.Append((char)_curr);
                 Eat();
             }
 
-            if (curr != ItemEnd)
+            if (_curr != ItemEndByte)
             {
-                ErrorMessages.Push($"Unexpected char {curr} at end of number");
+                ErrorMessages.Push($"Unexpected char {_curr} at end of number");
                 return null;
             }
             Eat();
 
-            string intStr = sb.ToString();
+            var intStr = sb.ToString();
 
-            if (!int.TryParse(intStr, out int value))
-            {
-                ErrorMessages.Push($"Failed to parse int from '{intStr}' for number");
-                return null;
-            }
-
-            return value;
+            if (int.TryParse(intStr, out var value)) return value;
+            
+            ErrorMessages.Push($"Failed to parse int from '{intStr}' for number");
+            return null;
         }
 
         private string? ReadString()
@@ -139,14 +124,9 @@ namespace FiZZ
             }
 
             StringBuilder sb = new();
-            for (int i = 0; i < strLen; i++)
+            for (var n = 0; n < strLen; n++)
             {
-                //if (!char.IsAscii(curr))
-                //{
-                //    ErrorMessages.Add($"Bad char {curr} in byte string");
-                //    return null;
-                //}
-                sb.Append(curr);
+                sb.Append(_curr);
                 Eat();
             }
 
@@ -156,34 +136,37 @@ namespace FiZZ
         private int? ReadStringLength()
         {
             StringBuilder sb = new();
-            while (char.IsNumber(curr))
+            while (char.IsDigit((char)_curr))
             {
-                sb.Append(curr);
+                sb.Append((char)_curr);
                 Eat();
             }
 
-            if (curr != ByteStringSeparator)
+            if (_curr != ByteStringSeparatorByte)
             {
-                ErrorMessages.Push($"Unexpected char {curr}, expected {ByteStringSeparator}");
+                ErrorMessages.Push($"Unexpected char {(char)_curr}, expected {ByteStringSeparator}");
                 return null;
             }
             Eat();
 
-            string intStr = sb.ToString();
+            var intStr = sb.ToString();
 
-            if (!int.TryParse(intStr, out int value))
-            {
-                ErrorMessages.Push($"Failed to parse int from '{intStr}' for string length");
-                return null;
-            }
+            if (int.TryParse(intStr, out var value)) return value;
             
-            return value;
+            ErrorMessages.Push($"Failed to parse int from '{intStr}' for string length");
+            return null;
+
         }
 
-        private char Eat()
+        private bool Eat()
         {
-            curr = _data[++i];
-            return curr;
+            if (_i + 1 >= data.Length)
+            {
+                ErrorMessages.Push($"Reached EOF");
+                return false;
+            }
+            _curr = data[++_i];
+            return true;
         }
     }
 }

@@ -10,26 +10,17 @@ namespace FiZZ
         public MainWindow()
         {
             InitializeComponent();
-
-            Loaded += MainWindow_Loaded;
         }
 
-        private void MainWindow_Loaded(object sender, RoutedEventArgs e)
+        private void ReadTorrentFile(byte[] data)
         {
-            
-        }
-
-        private void ReadTorrentFile(string contents)
-        {
-            char[] data = contents.ToCharArray();
-
             var bencode = new BencodeParser(data);
 
             var dict = bencode.Read();
             if (dict is null)
             {
                 var errors = bencode.ErrorMessages;
-                StringBuilder sb = new();
+                var sb = new StringBuilder();
                 while (errors.TryPop(out var error))
                 {
                     sb.Append($"{error}\n");
@@ -49,34 +40,30 @@ namespace FiZZ
                 InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
             };
 
-            bool? result = dlg.ShowDialog();
+            var result = dlg.ShowDialog();
 
-            if (result == true)
+            if (result != true) return;
+            
+            var path = dlg.FileName;
+
+            try
             {
-                string path = dlg.FileName;
-
-                try
-                {
-                    if (File.Exists(path))
-                    {
-                        using StreamReader reader = new(path);
-                        string contents = reader.ReadToEnd();
-                        ReadTorrentFile(contents);
-                    }
-                }
-                catch (IOException ex)
-                {
-                    ShowError($"Failed to read file: {ex.Message}");
-                }
-            } 
+                if (!File.Exists(path)) return;
+                var contents = File.ReadAllBytes(path);
+                ReadTorrentFile(contents);
+            }
+            catch (IOException ex)
+            {
+                ShowError($"Failed to read file: {ex.Message}");
+            }
         }
 
-        private void ShowInfo(string msg)
+        private static void ShowInfo(string msg)
         {
             MessageBox.Show(msg, "Info", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
-        private void ShowError(string msg)
+        private static void ShowError(string msg)
         {
             MessageBox.Show(msg, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
