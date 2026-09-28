@@ -25,11 +25,18 @@ namespace FiZZ
                 {
                     sb.Append($"{error}\n");
                 }
-                ShowError($"Bencode read error:\n{sb}");
+                ShowError($"bencode read error:\n{sb}");
                 return;
             }
 
-            ShowInfo($"Announce: {dict["announce"] as string}");
+            var torrent = TorrentBuilder.BuildTorrent(dict);
+            if (torrent is null)
+            {
+                ShowError("error while building torrent");
+                return;
+            }
+            
+            ShowInfo($"Opened torrent {torrent.Info.Name}");
         }
 
         private void OpenFile_Click(object sender, RoutedEventArgs e)

@@ -21,7 +21,7 @@ namespace FiZZ
 
         public Stack<string> ErrorMessages { get; } = [];
 
-        public Dictionary<string, object>? Read()
+        public BencodeDict? Read()
         {
             Eat();
             return ReadDictionary();
@@ -38,12 +38,12 @@ namespace FiZZ
             };
         }
 
-        private Dictionary<string, object>? ReadDictionary()
+        private BencodeDict? ReadDictionary()
         {
             if (_curr != DictionaryStartByte) return null;
             Eat();
 
-            Dictionary<string, object> dic = [];
+            BencodeDict dic = [];
             
             while (_curr != ItemEndByte)
             {
@@ -126,7 +126,7 @@ namespace FiZZ
             StringBuilder sb = new();
             for (var n = 0; n < strLen; n++)
             {
-                sb.Append(_curr);
+                sb.Append((char)_curr);
                 Eat();
             }
 
