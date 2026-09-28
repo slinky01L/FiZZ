@@ -6,13 +6,29 @@ namespace FiZZ
     
     public class BencodeDict : Dictionary<string, object>
     {
-        private string? GetString(string key)
+        private byte[]? GetByteArray(string key)
         {
-            return TryGetValue(key, out var value) && value is string s
-                ? s
+            return TryGetValue(key, out var value) && value is byte[] b
+                ? b
                 : null;
         }
     
+        public bool GetByteArray(string key, out byte[] value)
+        {
+            value = [];
+            var v = GetByteArray(key);
+            if (v is null)
+                return false;
+            value = v;
+            return true;
+        }
+        
+        public string? GetString(string key)
+        {
+            var bytes = GetByteArray(key);
+            return bytes is not null ? Encoding.UTF8.GetString(bytes) : null;
+        }
+
         public bool GetString(string key, out string value)
         {
             value = string.Empty;
@@ -113,7 +129,7 @@ namespace FiZZ
                 DictionaryStartByte => ReadDictionary(),
                 ListStartByte => ReadList(),
                 NumberStartByte => ReadNumber(),
-                _ => char.IsNumber((char)_curr) ? ReadString() : null
+                _ => char.IsNumber((char)_curr) ? ReadByteString() : null
             };
         }
 
@@ -126,12 +142,15 @@ namespace FiZZ
             
             while (_curr != ItemEndByte)
             {
-                var key = ReadString();
-                if (key is null)
+                System.Diagnostics.Debug.WriteLine($"At index {_i}, curr byte is {(byte)_curr:X2} ('{(char)_curr}')");
+                var keyBytes = ReadByteString();
+                if (keyBytes is null)
                 {
                     ErrorMessages.Push($"Error reading key");
                     return null;
                 }
+
+                var key = Encoding.UTF8.GetString(keyBytes);
 
                 var foundInfoKey = false;
                 if (key.Equals("info"))
@@ -219,33 +238,34 @@ namespace FiZZ
             return null;
         }
 
-        private string? ReadString()
+        private byte[]? ReadByteString()
         {
             var strLen = ReadStringLength();
             if (strLen is null)
             {
                 return null;
             }
-
-            if (_i + strLen > data.Length)
-            {
-                return null;
-            }
-
-            string result;
-            try 
-            {
-                result = Encoding.UTF8.GetString(data, _i, strLen.Value);
-            }
-            catch (Exception ex)
-            {
-                ErrorMessages.Push($"Failed to decode UTF8 string at index {_i}: {ex.Message}");
-                return null;
-            }
             
-            _i += (strLen.Value - 1); 
-            Eat();
+            var startIndex = _i;
 
+            if (_i + strLen.Value > data.Length)
+            {
+                ErrorMessages.Push($"String length {strLen.Value} at index {startIndex} exceeds remaining buffer size ({data.Length - _i} bytes left)");
+                return null;
+            }
+
+            var result = new byte[strLen.Value];
+            Array.Copy(data, _i, result, 0, strLen.Value);
+            
+            _i += strLen.Value;
+            
+            if (_i >= data.Length)
+            {
+                ErrorMessages.Push("Reached EOF immediately after reading byte string");
+                return null;
+            }
+
+            _curr = data[_i];
             return result;
         }
 

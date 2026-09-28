@@ -13,9 +13,6 @@ public class MainWindowModel(Action<string> showInfoToUser, Action<string> showE
 
     private readonly byte[] _peerId = PeerIdGenerator.GeneratePeerId();
 
-    private Action<string> _showInfoToUser = showInfoToUser;
-    private Action<string> _showErrorToUser = showErrorToUser;
-
     public Torrent? Torrent
     {
         get => _torrent;
@@ -42,7 +39,7 @@ public class MainWindowModel(Action<string> showInfoToUser, Action<string> showE
 
         if (baseUri is null)
         {
-            _showErrorToUser("Error: No valid HTTP/HTTPS tracker found in torrent metadata.");
+            showErrorToUser("Error: No valid HTTP/HTTPS tracker found in torrent metadata.");
             return;
         }
 
@@ -56,28 +53,29 @@ public class MainWindowModel(Action<string> showInfoToUser, Action<string> showE
         try
         {
             await using var responseStream = await client.SendAnnounceAsync(trRequestUri, cts.Token);
-            using var reader = new StreamReader(responseStream, leaveOpen: false);
-            var responseString = await reader.ReadToEndAsync();
-
-            var bencode = new BencodeParser(Encoding.UTF8.GetBytes(responseString));
+            
+            using var ms = new MemoryStream();
+            await responseStream.CopyToAsync(ms, cts.Token);
+            
+            var responseBytes = ms.ToArray();
+            var bencode = new BencodeParser(responseBytes);
+            
             var responseDict = bencode.Read();
             if (responseDict is null)
             {
-                _showErrorToUser("Failed to read bencode from tracker response");
+                showErrorToUser("Failed to read bencode from tracker response");
                 return;
             }
-            
-            _showInfoToUser("Got OK response from tracker");
+             
+            showInfoToUser("Got OK response from tracker");
         }
         catch (OperationCanceledException)
         {
-            _showErrorToUser("Tracker request timed out or was canceled.");
-            return;
+            showErrorToUser("Tracker request timed out or was canceled.");
         }
         catch (HttpRequestException ex)
         {
-            _showErrorToUser($"HTTP request failed with status {ex.StatusCode}: {ex.Message}");
-            return;
+            showErrorToUser($"HTTP request failed with status {ex.StatusCode}: {ex.Message}");
         }
     }
 }

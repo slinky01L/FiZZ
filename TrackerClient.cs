@@ -30,17 +30,18 @@ public sealed record TrackerResponsePeerData(
     string Port
 );
 
-public sealed record TrackerResponse(
-    string FailureReason,
-    string? WarningMessage,
-    long Interval,
-    long? MinInterval,
-    string TrackerId,
-    long Complete,
-    long Incomplete,
-    List<TrackerResponsePeerData> PeersDictList,
-    byte[] PeersBytes
-);
+public class TrackerResponse
+{
+    public string? FailureReason;
+    public string? WarningMessage;
+    public long? Interval;
+    public long? MinInterval;
+    public string? TrackerId;
+    public long? Complete;
+    public long? Incomplete;
+    public List<TrackerResponsePeerData>? PeersDictList;
+    public byte[]? PeersBytes;
+};
 
 public static class TrackerRequestBuilder
 {
@@ -130,6 +131,43 @@ public static class TrackerRequestBuilder
 
     private static char GetHexChar(int value) =>
         (char)(value < 10 ? '0' + value : 'A' + (value - 10));
+}
+
+public static class TrackerResponseBuilder
+{
+    public static TrackerResponse? BuildTrackerResponseFromBencode(BencodeDict responseDict)
+    {
+        var response = new TrackerResponse();
+        
+        if (responseDict.GetString("failure reason", out response.FailureReason))
+        {
+            return response;
+        }
+
+        if (!responseDict.GetLong("interval", out var interval)) return null;
+        if (!responseDict.GetString("tracker id", out var trackerId)) return null;
+        if (!responseDict.GetLong("complete", out var complete)) return null;
+        if (!responseDict.GetLong("incomplete", out var incomplete)) return null;
+
+        var gotPeerDict = responseDict.GetDict("peers", out var peersDict);
+        var gotPeerBin = responseDict.GetByteArray("peers", out var peersBin);
+
+        if (!gotPeerBin && !gotPeerDict) return null;
+
+        if (gotPeerBin)
+        {
+            
+        }
+
+        if (gotPeerDict)
+        {
+            
+        }
+        
+        responseDict.GetString("warning message", out var warningMessage);
+        
+        responseDict.Get
+    }
 }
 
 public class TrackerClient(HttpClient httpClient)
