@@ -7,25 +7,30 @@ namespace FiZZ
 {
     public partial class MainWindow : Window
     {
+        private MainWindowModel _model;
+        
         public MainWindow()
         {
             InitializeComponent();
+            _model = new MainWindowModel(ShowInfo, ShowError);
+            DataContext = _model;
         }
 
-        private void ReadTorrentFile(byte[] data)
+        private async Task ReadTorrentFile(byte[] data)
         {
             var bencode = new BencodeParser(data);
 
             var dict = bencode.Read();
             if (dict is null)
             {
-                var errors = bencode.ErrorMessages;
-                var sb = new StringBuilder();
-                while (errors.TryPop(out var error))
-                {
-                    sb.Append($"{error}\n");
-                }
-                ShowError($"bencode read error:\n{sb}");
+                ShowError($"bencode read error");
+                return;
+            }
+
+            var infoDictData = bencode.InfoDictData;
+            if (infoDictData is null)
+            {
+                ShowError("bencode read error");
                 return;
             }
 
@@ -36,7 +41,7 @@ namespace FiZZ
                 return;
             }
             
-            ShowInfo($"Opened torrent {torrent.Info.Name}");
+            await _model.AddTorrent(infoDictData, torrent);
         }
 
         private void OpenFile_Click(object sender, RoutedEventArgs e)
@@ -57,7 +62,10 @@ namespace FiZZ
             {
                 if (!File.Exists(path)) return;
                 var contents = File.ReadAllBytes(path);
-                ReadTorrentFile(contents);
+                Task.Run(async () =>
+                {
+                    await ReadTorrentFile(contents);
+                });
             }
             catch (IOException ex)
             {

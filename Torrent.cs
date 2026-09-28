@@ -1,72 +1,43 @@
-﻿namespace FiZZ;
+﻿using System.Security.Cryptography;
 
-public class BencodeDict : Dictionary<string, object>
+namespace FiZZ;
+
+public class TorrentSingleFileInfo
 {
-    public string? GetString(string key)
-    {
-        return TryGetValue(key, out var value) && value is string s
-            ? s
-            : null;
-    }
-    
-    public bool GetString(string key, out string value)
-    {
-        value = string.Empty;
-        var v = GetString(key);
-        if (v is null)
-            return false;
-        value = v;
-        return true;
-    }
-
-    public int? GetInt(string key)
-    {
-        return TryGetValue(key, out var value) && value is int i
-            ? i
-            : null;
-    }
-
-    public bool GetInt(string key, out int value)
-    {
-        value = 0;
-        var v = GetInt(key);
-        if (v is null)
-            return false;
-        value = v.Value;
-        return true;
-    }
-
-    public BencodeList? GetList(string key)
-    {
-        return TryGetValue(key, out var value) && value is BencodeList l
-            ? l
-            : null;
-    }
-
-    public BencodeDict? GetDict(string key)
-    {
-        return TryGetValue(key, out var value) && value is BencodeDict d
-            ? d
-            : null;
-    }
+    public long Length = 0;
+    public string Md5 = string.Empty;
 }
 
-public class BencodeList : List<object>;
+public class TorrentMultiFileInfo
+{
+    public long Length = 0;
+    public string Md5 = string.Empty;
+    public List<string> Path = [];
+}
 
 public class TorrentInfo
 {
-    public int PieceLength = 0;
+    public long PieceLength = 0;
     public string Pieces = string.Empty;
     public bool Private = false;
+    
     public string Name = string.Empty;
-    public int Length = 0;
-    public string Md5 = string.Empty;
+    public TorrentSingleFileInfo? SingleFileInfo;
+    public List<TorrentMultiFileInfo>? MultiFileInfo;
+    
+    public long TotalSize => SingleFileInfo?.Length ?? (MultiFileInfo?.Sum(f => f.Length) ?? 0);
 }
 
 public class Torrent
 {
     public TorrentInfo Info;
     public string Announce = string.Empty;
+    
+    public List<string>? AnnounceList;
+    public long CreationDate = 0;
+    public string Comment = string.Empty;
+    public string CreatedBy = string.Empty;
+    public string Encoding = string.Empty;
 }
 
 public static class TorrentBuilder
@@ -74,48 +45,88 @@ public static class TorrentBuilder
     public static Torrent? BuildTorrent(BencodeDict dictionary)
     {
         var torrent = new Torrent();
-
+        
         if (!dictionary.GetString("announce", out torrent.Announce)) return null;
-
-        var infoDict = dictionary.GetDict("info");
-        if (infoDict is null)
-            return null;
+        
+        if (!dictionary.GetDict("info", out var infoDict)) return null;
         
         var info = BuildTorrentInfo(infoDict);
         if (info is null)
             return null;
-        
         torrent.Info = info;
+        
+        if (dictionary.GetList("announce-list", out var announceList))
+        {
+            var list = BuildAnnounceList(announceList);
+            if (list is not null) torrent.AnnounceList = list;
+        }
+        dictionary.GetLong("creation date", out torrent.CreationDate);
+        dictionary.GetString("comment", out torrent.Comment);
+        dictionary.GetString("created by", out torrent.CreatedBy);
+        dictionary.GetString("encoding", out torrent.Encoding);
 
         return torrent;
+    }
+
+    private static List<string>? BuildAnnounceList(BencodeList lists)
+    {
+        List<string> announces = [];
+        foreach (var list in lists)
+        {
+            if (list is not BencodeList announceList) return null;
+            foreach (var announce in announceList)
+            {
+                if (announce is not string announceStr) continue;
+                announces.Add(announceStr);
+            }
+        }
+        return announces;
     }
 
     private static TorrentInfo? BuildTorrentInfo(BencodeDict infoDict)
     {
         var torrentInfo = new TorrentInfo();
 
-        if (!infoDict.GetInt("piece length", out torrentInfo.PieceLength))
+        if (!infoDict.GetLong("piece length", out torrentInfo.PieceLength)) return null;
+        if (!infoDict.GetString("pieces", out torrentInfo.Pieces)) return null;
+        if (!infoDict.GetString("name", out torrentInfo.Name)) return null;
+
+        var foundLength = infoDict.ContainsKey("length");
+        var foundFiles = infoDict.ContainsKey("files");
+
+        if (foundLength)
         {
-            return null;
+            torrentInfo.SingleFileInfo = new TorrentSingleFileInfo();
+            if (!infoDict.GetLong("length", out torrentInfo.SingleFileInfo.Length)) return null;
+            if (!infoDict.GetString("md5sum", out torrentInfo.SingleFileInfo.Md5)) return null;
         }
 
-        if (!infoDict.GetString("pieces", out torrentInfo.Pieces))
+        if (foundFiles)
         {
-            return null;
+            if (!infoDict.GetList("files", out var list)) return null;
+            
+            torrentInfo.MultiFileInfo = [];
+            
+            foreach (var file in list)
+            {
+                if (file is not BencodeDict fileDict) return null;
+                
+                TorrentMultiFileInfo mfInfo = new();
+                
+                if (!fileDict.GetLong("length", out mfInfo.Length)) return null;
+                if (!fileDict.GetList("path", out var pathList)) return null;
+                foreach (var path in pathList)
+                {
+                    if (path is not string p) return null;
+                    mfInfo.Path.Add(p);
+                }
+                fileDict.GetString("md5sum", out mfInfo.Md5);
+                
+                torrentInfo.MultiFileInfo.Add(mfInfo);
+            }
         }
-
-        if (!infoDict.GetString("name", out torrentInfo.Name))
-        {
-            return null;
-        }
-
-        if (!infoDict.GetInt("length", out torrentInfo.Length))
-        {
-            return null;
-        }
-
-        infoDict.GetString("md5sum", out torrentInfo.Md5);
-        infoDict.GetInt("private", out torrentInfo.PieceLength);
+        
+        infoDict.GetLong("private", out torrentInfo.PieceLength);
 
         return torrentInfo;
     }

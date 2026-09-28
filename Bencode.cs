@@ -2,7 +2,80 @@
 
 namespace FiZZ
 {
-    internal class BencodeParser(byte[] data)
+    public class BencodeList : List<object>;
+    
+    public class BencodeDict : Dictionary<string, object>
+    {
+        private string? GetString(string key)
+        {
+            return TryGetValue(key, out var value) && value is string s
+                ? s
+                : null;
+        }
+    
+        public bool GetString(string key, out string value)
+        {
+            value = string.Empty;
+            var v = GetString(key);
+            if (v is null)
+                return false;
+            value = v;
+            return true;
+        }
+
+        private long? GetLong(string key)
+        {
+            return TryGetValue(key, out var value) && value is long i
+                ? i
+                : null;
+        }
+
+        public bool GetLong(string key, out long value)
+        {
+            value = 0;
+            var v = GetLong(key);
+            if (v is null)
+                return false;
+            value = v.Value;
+            return true;
+        }
+
+        private BencodeList? GetList(string key)
+        {
+            return TryGetValue(key, out var value) && value is BencodeList l
+                ? l
+                : null;
+        }
+    
+        public bool GetList(string key, out BencodeList value)
+        {
+            value = null;
+            var v = GetList(key);
+            if (v is null)
+                return false;
+            value = v;
+            return true;
+        }
+
+        private BencodeDict? GetDict(string key)
+        {
+            return TryGetValue(key, out var value) && value is BencodeDict d
+                ? d
+                : null;
+        }
+        
+        public bool GetDict(string key, out BencodeDict value)
+        {
+            value = null;
+            var v = GetDict(key);
+            if (v is null)
+                return false;
+            value = v;
+            return true;
+        }
+    }
+    
+    public class BencodeParser(byte[] data)
     {
         private const char DictionaryStart = 'd';
         private const char ListStart = 'l';
@@ -21,11 +94,17 @@ namespace FiZZ
 
         public Stack<string> ErrorMessages { get; } = [];
 
+        public int _infoStart = 0;
+        public int _infoEnd = 0;
+
         public BencodeDict? Read()
         {
+            if (data.Length == 0) return null;
             Eat();
             return ReadDictionary();
         }
+
+        public byte[]? InfoDictData => _infoStart == _infoEnd ? null : data[_infoStart.._infoEnd];
 
         private object? ReadNextElement()
         {
@@ -54,6 +133,13 @@ namespace FiZZ
                     return null;
                 }
 
+                var foundInfoKey = false;
+                if (key.Equals("info"))
+                {
+                    foundInfoKey = true;
+                    _infoStart = _i;
+                }
+
                 var value = ReadNextElement();
                 if (value is null)
                 {
@@ -61,18 +147,26 @@ namespace FiZZ
                     return null;
                 }
 
+                if (foundInfoKey)
+                {
+                    _infoEnd = _i;
+                }
+
                 dic[key] = value;
             }
+
+            if (_curr != ItemEndByte) return null;
+            Eat();
 
             return dic;
         }
 
-        private List<object>? ReadList()
+        private BencodeList? ReadList()
         {
             if (_curr != ListStartByte) return null;
             Eat();
 
-            List<object> list = [];
+            BencodeList list = [];
 
             while (_curr != ItemEndByte)
             {
@@ -84,16 +178,26 @@ namespace FiZZ
                 }
                 list.Add(value);
             }
+            
+            if (_curr != ItemEndByte) return null;
+            Eat();
 
             return list;
         }
 
-        private int? ReadNumber()
+        private long? ReadNumber()
         {
             if (_curr != NumberStartByte) return null;
             Eat();
 
             StringBuilder sb = new();
+            
+            if ((char)_curr == '-')
+            {
+                sb.Append('-');
+                Eat();
+            }
+            
             while (char.IsDigit((char)_curr))
             {
                 sb.Append((char)_curr);
@@ -109,7 +213,7 @@ namespace FiZZ
 
             var intStr = sb.ToString();
 
-            if (int.TryParse(intStr, out var value)) return value;
+            if (long.TryParse(intStr, out var value)) return value;
             
             ErrorMessages.Push($"Failed to parse int from '{intStr}' for number");
             return null;
@@ -123,14 +227,26 @@ namespace FiZZ
                 return null;
             }
 
-            StringBuilder sb = new();
-            for (var n = 0; n < strLen; n++)
+            if (_i + strLen > data.Length)
             {
-                sb.Append((char)_curr);
-                Eat();
+                return null;
             }
 
-            return sb.ToString();
+            string result;
+            try 
+            {
+                result = Encoding.UTF8.GetString(data, _i, strLen.Value);
+            }
+            catch (Exception ex)
+            {
+                ErrorMessages.Push($"Failed to decode UTF8 string at index {_i}: {ex.Message}");
+                return null;
+            }
+            
+            _i += (strLen.Value - 1); 
+            Eat();
+
+            return result;
         }
 
         private int? ReadStringLength()
@@ -155,7 +271,6 @@ namespace FiZZ
             
             ErrorMessages.Push($"Failed to parse int from '{intStr}' for string length");
             return null;
-
         }
 
         private bool Eat()

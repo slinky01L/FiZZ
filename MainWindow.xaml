@@ -14,9 +14,8 @@
             </MenuItem>
         </Menu>
 
-        <TextBox Name="TxtDisplay" 
-                 AcceptsReturn="True" 
-                 TextWrapping="Wrap" 
-                 VerticalScrollBarVisibility="Auto" />
+        <Grid>
+            
+        </Grid>
     </DockPanel>
 </Window>
