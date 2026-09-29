@@ -66,8 +66,15 @@ public class MainWindowModel(Action<string> showInfoToUser, Action<string> showE
                 showErrorToUser("Failed to read bencode from tracker response");
                 return;
             }
+
+            var response = new TrackerResponse();
+            if (!response.Deserialize(responseDict))
+            { 
+                showErrorToUser("Failed to construct tracker response object");
+                return;
+            }
              
-            showInfoToUser("Got OK response from tracker");
+            showInfoToUser($"Found {response.PeersList!.Count} peers");
         }
         catch (OperationCanceledException)
         {

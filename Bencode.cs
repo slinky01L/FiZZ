@@ -90,6 +90,11 @@ namespace FiZZ
             return true;
         }
     }
+
+    public interface IBencodable
+    {
+        public bool Deserialize(BencodeDict dict);
+    }
     
     public class BencodeParser(byte[] data)
     {

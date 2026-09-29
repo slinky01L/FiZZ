@@ -1,4 +1,6 @@
-﻿using System.Text;
+﻿using System.Buffers.Binary;
+using System.Net;
+using System.Text;
 
 namespace FiZZ;
 
@@ -25,12 +27,12 @@ public sealed record TrackerRequestParameters(
 );
 
 public sealed record TrackerResponsePeerData(
-    string PeerId,
-    string Ip,
-    string Port
+    string? PeerId,
+    IPAddress Ip,
+    ushort Port
 );
 
-public class TrackerResponse
+public class TrackerResponse : IBencodable
 {
     public string? FailureReason;
     public string? WarningMessage;
@@ -39,8 +41,81 @@ public class TrackerResponse
     public string? TrackerId;
     public long? Complete;
     public long? Incomplete;
-    public List<TrackerResponsePeerData>? PeersDictList;
-    public byte[]? PeersBytes;
+    public List<TrackerResponsePeerData>? PeersList;
+
+    public bool Deserialize(BencodeDict dict)
+    {
+        if (dict.GetString("failure reason", out var failureReason))
+        {
+            FailureReason = failureReason;
+            return true;
+        }
+
+        if (!dict.GetLong("interval", out var interval)) return false;
+
+        var gotPeerDict = dict.GetList("peers", out var peersDictList);
+        var gotPeerBin = dict.GetByteArray("peers", out var peersBin);
+
+        if (!gotPeerBin && !gotPeerDict) return false;
+
+        PeersList = [];
+
+        if (gotPeerBin)
+        {
+            for (var i = 0; i < peersBin.Length; i += 6)
+            {
+                var peerSlice = peersBin.AsSpan(i, 6);
+                var ipBytes = peerSlice[..4];
+                var ip = new IPAddress(ipBytes);
+                
+                var portBytes = peerSlice.Slice(4, 2);
+                var port = BinaryPrimitives.ReadUInt16BigEndian(portBytes);
+                
+                PeersList.Add(new TrackerResponsePeerData(PeerId: null, Ip: ip, Port: port));
+            }
+        }
+        else if (gotPeerDict)
+        {
+            foreach (var peer in peersDictList)
+            {
+                if (peer is not BencodeDict peerDict) continue;
+                
+                if (!peerDict.GetString("peer id", out var peerId)) continue;
+                if (!peerDict.GetString("ip", out var ipStr)) continue;
+                if (!peerDict.GetLong("port", out var port)) continue;
+                if (!IPAddress.TryParse(ipStr, out var ip)) continue;
+                
+                PeersList.Add(new TrackerResponsePeerData(PeerId: peerId, Ip: ip, Port: (ushort)port));
+            }
+        }
+
+        if (dict.GetLong("complete", out var complete))
+        {
+            Complete = complete;
+        }
+
+        if (dict.GetLong("incomplete", out var incomplete))
+        {
+            Incomplete = incomplete;
+        }
+
+        if (dict.GetLong("min interval", out var minInterval))
+        {
+            MinInterval = minInterval;
+        }
+
+        if (dict.GetString("warning message", out var warningMessage))
+        {
+            WarningMessage = warningMessage;
+        }
+        
+        if (dict.GetString("tracker id", out var trackerId))
+        {
+            TrackerId = trackerId;
+        }
+
+        return true;
+    }
 };
 
 public static class TrackerRequestBuilder
@@ -131,43 +206,6 @@ public static class TrackerRequestBuilder
 
     private static char GetHexChar(int value) =>
         (char)(value < 10 ? '0' + value : 'A' + (value - 10));
-}
-
-public static class TrackerResponseBuilder
-{
-    public static TrackerResponse? BuildTrackerResponseFromBencode(BencodeDict responseDict)
-    {
-        var response = new TrackerResponse();
-        
-        if (responseDict.GetString("failure reason", out response.FailureReason))
-        {
-            return response;
-        }
-
-        if (!responseDict.GetLong("interval", out var interval)) return null;
-        if (!responseDict.GetString("tracker id", out var trackerId)) return null;
-        if (!responseDict.GetLong("complete", out var complete)) return null;
-        if (!responseDict.GetLong("incomplete", out var incomplete)) return null;
-
-        var gotPeerDict = responseDict.GetDict("peers", out var peersDict);
-        var gotPeerBin = responseDict.GetByteArray("peers", out var peersBin);
-
-        if (!gotPeerBin && !gotPeerDict) return null;
-
-        if (gotPeerBin)
-        {
-            
-        }
-
-        if (gotPeerDict)
-        {
-            
-        }
-        
-        responseDict.GetString("warning message", out var warningMessage);
-        
-        responseDict.Get
-    }
 }
 
 public class TrackerClient(HttpClient httpClient)
