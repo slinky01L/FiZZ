@@ -1,6 +1,8 @@
 ﻿using System.ComponentModel;
 using System.IO;
+using System.Net;
 using System.Net.Http;
+using System.Net.Sockets;
 using System.Text;
 
 namespace FiZZ;
@@ -9,28 +11,20 @@ public class MainWindowModel(Action<string> showInfoToUser, Action<string> showE
 {
     private const ushort ListeningPort = 6889;
 
-    private Torrent? _torrent;
-
     private readonly byte[] _peerId = PeerIdGenerator.GeneratePeerId();
 
-    public Torrent? Torrent
+    private byte[]? _infoHash;
+    
+    public async Task AddTorrentAsync(byte[] infoData, Torrent torrent)
     {
-        get => _torrent;
-        set { _torrent = value; NotifyPropertyChanged(); }
-    }
+        _infoHash = HashUtility.ComputeHash(infoData);
 
-    public async Task AddTorrent(byte[] infoData, Torrent torrent)
-    {
-        _torrent = torrent;
-
-        var infoHash = HashUtility.ComputeHash(infoData);
-
-        var trRequestParams = TrackerRequestBuilder.BuildTrackerRequestParameters(infoHash, _peerId, ListeningPort, _torrent.Info.TotalSize);
+        var trRequestParams = TrackerRequestBuilder.BuildTrackerRequestParameters(_infoHash, _peerId, ListeningPort, torrent.Info.TotalSize);
         
-        var baseUri = TorrentUriParser.GetHttpAnnounceUri(_torrent.Announce);
-        if (baseUri is null && _torrent.AnnounceList is not null)
+        var baseUri = TorrentUriParser.GetHttpAnnounceUri(torrent.Announce);
+        if (baseUri is null && torrent.AnnounceList is not null)
         {
-            foreach (var announce in _torrent.AnnounceList)
+            foreach (var announce in torrent.AnnounceList)
             {
                 baseUri = TorrentUriParser.GetHttpAnnounceUri(announce);
                 if (baseUri is not null) break;
@@ -50,6 +44,7 @@ public class MainWindowModel(Action<string> showInfoToUser, Action<string> showE
         
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         
+        var trackerResponse = new TrackerResponse();
         try
         {
             await using var responseStream = await client.SendAnnounceAsync(trRequestUri, cts.Token);
@@ -66,23 +61,38 @@ public class MainWindowModel(Action<string> showInfoToUser, Action<string> showE
                 showErrorToUser("Failed to read bencode from tracker response");
                 return;
             }
-
-            var response = new TrackerResponse();
-            if (!response.Deserialize(responseDict))
+            
+            if (!trackerResponse.Deserialize(responseDict))
             { 
                 showErrorToUser("Failed to construct tracker response object");
                 return;
             }
              
-            showInfoToUser($"Found {response.PeersList!.Count} peers");
+            showInfoToUser($"Found {trackerResponse.PeersList!.Count} peers, start download?");
         }
         catch (OperationCanceledException)
         {
             showErrorToUser("Tracker request timed out or was canceled.");
+            return;
         }
         catch (HttpRequestException ex)
         {
             showErrorToUser($"HTTP request failed with status {ex.StatusCode}: {ex.Message}");
+            return;
+        }
+
+        var peerList = trackerResponse.PeersList!;
+        foreach (var peer in peerList)
+        {
+            var peerClient = new TcpClient();
+            HandleNewClientConnectionAsync(peerClient);
         }
     }
+
+    private async Task HandleNewClientConnectionAsync(TcpClient client)
+    {
+        
+    }
+    
+    private void HandlePeerMessage(string peerId)
 }

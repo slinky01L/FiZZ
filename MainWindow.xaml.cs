@@ -41,7 +41,7 @@ namespace FiZZ
                 return;
             }
             
-            await _model.AddTorrent(infoDictData, torrent);
+            await _model.AddTorrentAsync(infoDictData, torrent);
         }
 
         private void OpenFile_Click(object sender, RoutedEventArgs e)

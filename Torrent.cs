@@ -20,7 +20,6 @@ public class TorrentInfo
     public long PieceLength = 0;
     public string Pieces = string.Empty;
     public bool Private = false;
-    
     public string Name = string.Empty;
     public TorrentSingleFileInfo? SingleFileInfo;
     public List<TorrentMultiFileInfo>? MultiFileInfo;
@@ -32,7 +31,6 @@ public class Torrent
 {
     public TorrentInfo Info;
     public string Announce = string.Empty;
-    
     public List<string>? AnnounceList;
     public long CreationDate = 0;
     public string Comment = string.Empty;
@@ -126,6 +124,7 @@ public static class TorrentBuilder
             }
         }
         
+        // optional
         infoDict.GetLong("private", out torrentInfo.PieceLength);
 
         return torrentInfo;
